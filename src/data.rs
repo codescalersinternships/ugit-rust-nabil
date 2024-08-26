@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::io::Write;
+use std::vec;
 use hex_literal::hex;
 use sha1::{Sha1, Digest};
 use crate::data;
@@ -15,17 +16,13 @@ pub fn init() {
     //fs::write(format!("{}/HEAD", GIT_DIR), "ref:refs/heads/master").unwrap();
 }
 
-pub fn hash_object(data: &Vec<u8>) -> String{
+pub fn hash_object(data: &Vec<u8>,  expected: &str) -> String{
     // create a Sha1 object
     let mut hasher = Sha1::new();
 
     // process input message
     hasher.update(data);
 
-    // acquire hash digest in the form of GenericArray,
-    // which in this case is equivalent to [u8; 20]
-    // let result = hasher.finalize();
-    // assert_eq!(result[..], hex!("2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"));
     let result: String = format!("{:X}", hasher.finalize());
 
     let object_path = format!("{}/objects/{}", GIT_DIR, result);
@@ -34,7 +31,9 @@ pub fn hash_object(data: &Vec<u8>) -> String{
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("Failed to create directories");
     }
-
+    let mut data = data.clone();
+    let expected_bytes = expected.as_bytes();
+    data = [expected_bytes,b"\0", &data].concat();
     let mut file = fs::File::create(path).expect("Failed to create file");
     match file.write_all(&data){
         Ok(_) => println!("file wrote succesfully"),
@@ -44,8 +43,20 @@ pub fn hash_object(data: &Vec<u8>) -> String{
 }
 
 
-pub fn cat_file(path: &String) {
-    let content = fs::read(format!(".ugit/objects/{}", path)).unwrap();
-        let s = String::from_utf8_lossy(&content);
-        println!("{}", s);
+pub fn get_object(path: &String, expected: &str) -> String{
+    let mut content = Vec::new();
+    content = fs::read(format!("{}/objects/{}", GIT_DIR, path)).unwrap();
+
+    // Find the first null byte to separate the type and content
+    let null_index = content.iter().position(|&b| b == 0)
+        .expect("Invalid object format: no null separator found");
+
+    let type_ = String::from_utf8(content[..null_index].to_vec()).unwrap();
+
+    let ret = String::from_utf8(content[null_index + 1..].to_vec()).unwrap();
+
+    if type_ != expected {
+        panic!("types isn't right")
+    }
+    return ret;
 }

@@ -19,10 +19,11 @@ fn main() {
     }else if args[1] == "hash-object" {
         hash_object(&args[2]);
     }else if args[1] == "cat-file" {
-        data::cat_file(&args[2])
+        println!("{}",data::get_object(&args[2],"tree"))
     }else if args[1] == "write-tree" {
-        println!("{}",args[2]);
-        base::write_tree(&args[2])
+        println!("{}",base::write_tree(&args[2]))
+    }else if args[1] == "read-tree" {
+        base::read_tree(&args[2])
     }
     
 }
@@ -33,7 +34,7 @@ fn hash_object(file_path: &str) {
         Ok(val) => val,
         Err(err) => return, 
     };
-    let newdata = data::hash_object(&data);
+    let newdata = data::hash_object(&data,"blob");
     println!("Object ID: {}", newdata);
 
 }
