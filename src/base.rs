@@ -126,3 +126,18 @@ pub fn read_tree(tree_oid: &str) {
         file.write_all(&object_data.as_bytes()).expect("Failed to write to file");
     }
 }
+
+pub fn commit(msg: &String) -> String {
+    let tree = write_tree(".");
+    let mut commitStr: String =  format!("tree {} \n",tree);
+    let HEAD = data::get_head();
+    if HEAD != "" {
+        commitStr += format!("parent {HEAD}\n").as_str();
+    }
+    commitStr += "\n";
+    commitStr += format!("{msg}\n").as_str();
+
+    let oid = data::hash_object(&commitStr.into_bytes(), "commit");
+    data::set_head(&oid);
+    return oid;
+}

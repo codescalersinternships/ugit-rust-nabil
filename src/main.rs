@@ -24,6 +24,8 @@ fn main() {
         println!("{}",base::write_tree(&args[2]))
     }else if args[1] == "read-tree" {
         base::read_tree(&args[2])
+    }else if args[1] == "commit" {
+        base::commit(&args[2])
     }
     
 }

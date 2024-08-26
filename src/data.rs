@@ -60,3 +60,11 @@ pub fn get_object(path: &String, expected: &str) -> String{
     }
     return ret;
 }
+
+pub fn set_head(oid: &String) {
+    fs::write(format!("{}/HEAD/", GIT_DIR),oid).unwrap();
+}
+
+pub fn get_head() -> String {
+    return  String::from_utf8(fs::read(format!("{}/HEAD/", GIT_DIR)).unwrap().to_vec()).unwrap();
+}
