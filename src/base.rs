@@ -6,6 +6,7 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 use std::collections::HashMap;
+use std::vec;
 
 
 pub fn empty_current_directory() {
@@ -140,4 +141,40 @@ pub fn commit(msg: &String) -> String {
     let oid = data::hash_object(&commitStr.into_bytes(), "commit");
     data::set_head(&oid);
     return oid;
+}
+
+
+pub fn get_commit(oid: String) -> Vec<(String, String, String)>  {
+    let comit = data::get_object(&oid, "commit");
+    let mut parent: String = "".to_string();
+    let mut tree: String = "".to_string();
+    let mut message: String = "".to_string();
+    for entry in comit.lines() {
+        let space = entry.chars().position(|c| c == ' ')
+        .expect("Invalid object format: no space separator found");
+        let cur_key:String = entry[..space].to_string();
+        let cur_value:String = entry[space..].to_string();
+        if cur_key == "tree" {
+            tree = cur_value;
+        }else if cur_key == "parent" {
+            tree = cur_value;
+        }else {
+            panic!("unkonown key");
+        }
+        message += entry;
+        message += "\n";
+    }
+    if message.len() > 0 {
+        message.pop();
+    }
+
+    let mut ret:Vec<(String, String, String)> = Vec::new();
+    ret.push((tree,parent,message));
+    return ret;
+}
+
+pub fn checkout(oid: String) {
+    let comit = get_commit(oid.clone());
+    read_tree(&comit[0].1);
+    data::set_head(&oid);
 }

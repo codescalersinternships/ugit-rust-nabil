@@ -25,7 +25,11 @@ fn main() {
     }else if args[1] == "read-tree" {
         base::read_tree(&args[2])
     }else if args[1] == "commit" {
-        base::commit(&args[2])
+        println!("{}",base::commit(&args[2]))
+    }else if args[1] == "log" {
+        log("".to_string());
+    }else if args[1] == "checkout" {
+        base::checkout(args[2].clone());
     }
     
 }
@@ -39,4 +43,17 @@ fn hash_object(file_path: &str) {
     let newdata = data::hash_object(&data,"blob");
     println!("Object ID: {}", newdata);
 
+}
+
+fn log(text: String) {
+    let mut oid: String = data::get_head();
+    if text.len() > 0 {
+        oid = text.clone();
+    }
+    while oid.len() != 0 {
+        let commit = base::get_commit(oid.clone());
+        print!("commit {}\n",oid.clone());
+        println!("{}",commit[0].2);
+        oid = commit[0].1.clone();
+    }
 }
