@@ -131,9 +131,10 @@ pub fn read_tree(tree_oid: &str) {
 pub fn commit(msg: &String) -> String {
     let tree = write_tree(".");
     let mut commitStr: String =  format!("tree {} \n",tree);
-    let HEAD = data::get_head();
-    if HEAD != "" {
-        commitStr += format!("parent {HEAD}\n").as_str();
+    let head = data::get_head();
+    println!("head is{}",head);
+    if head != "" {
+        commitStr += format!("parent {head}\n").as_str();
     }
     commitStr += "\n";
     commitStr += format!("{msg}\n").as_str();
@@ -149,9 +150,12 @@ pub fn get_commit(oid: String) -> Vec<(String, String, String)>  {
     let mut parent: String = "".to_string();
     let mut tree: String = "".to_string();
     let mut message: String = "".to_string();
+    //println!("hereee\n {}\n here awy b2", comit);
     for entry in comit.lines() {
-        let space = entry.chars().position(|c| c == ' ')
-        .expect("Invalid object format: no space separator found");
+        let space = match entry.chars().position(|c| c == ' '){
+            Some(val) => val,
+             None => break,
+        };
         let cur_key:String = entry[..space].to_string();
         let cur_value:String = entry[space..].to_string();
         if cur_key == "tree" {
@@ -170,6 +174,7 @@ pub fn get_commit(oid: String) -> Vec<(String, String, String)>  {
 
     let mut ret:Vec<(String, String, String)> = Vec::new();
     ret.push((tree,parent,message));
+    //println!("{} {} {}",ret[0].0, ret[0].1, ret[0].2);
     return ret;
 }
 

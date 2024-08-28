@@ -62,9 +62,20 @@ pub fn get_object(path: &String, expected: &str) -> String{
 }
 
 pub fn set_head(oid: &String) {
-    fs::write(format!("{}/HEAD/", GIT_DIR),oid).unwrap();
+    let head_path = format!("{}/HEAD", GIT_DIR);
+    if !Path::new(&head_path).exists() {
+        fs::File::create(head_path).expect("couldn't create head file");
+    }
+    fs::write(format!("{}/HEAD", GIT_DIR),oid).expect("file of head isn't found")
 }
 
 pub fn get_head() -> String {
-    return  String::from_utf8(fs::read(format!("{}/HEAD/", GIT_DIR)).unwrap().to_vec()).unwrap();
+    let head_path = format!("{}/HEAD", GIT_DIR);
+    if !Path::new(&head_path).exists() {
+        return String::new();
+    }
+    match fs::read(&head_path) {
+        Ok(content) => String::from_utf8(content).unwrap_or_else(|_| String::new()),
+        Err(_) => String::new(),
+    }
 }
