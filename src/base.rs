@@ -18,9 +18,15 @@ pub fn empty_current_directory() -> Result<(), io::Error> {
         }
         //println!("{}",full_path);
         if path.is_file() {
-            fs::remove_file(&path).expect("file remove error")
+            match fs::remove_file(&path){
+                Ok(_) => continue,
+                Err(err) => return Err(Error::new(ErrorKind::InvalidData,format!("file remove error: {}", err))),
+            };
         } else if path.is_dir() {
-            fs::remove_dir(&path).expect("directory remove error")
+            match fs::remove_dir_all(&path){
+                Ok(_) => continue,
+                Err(err) => return Err(Error::new(ErrorKind::InvalidData,format!("directory remove error: {}", err))),
+            };
         }
     }
     Ok(())
@@ -119,7 +125,7 @@ fn get_tree(oid: &str, base_path: &str) -> Result< HashMap<String, String>, io::
 }
 
 pub fn read_tree(tree_oid: &str) -> Result<(), io::Error> {
-    empty_current_directory()?;
+    //empty_current_directory()?;
     let tree = get_tree(tree_oid, ".ugit/objects/")?;
 
     for (path, oid) in tree {
