@@ -55,12 +55,14 @@ fn hash_object(file_path: &str) -> Result<(), io::Error> {
 
 fn log(text: &str) -> Result<(), io::Error>{
     let mut oid: String = data::get_ref("HEAD")?;
-    if !oid.is_empty() {
+    if !text.is_empty() && ( text != "HEAD" || text != "@") {
         oid = String::from(text);
     }
-    println!("{oid}");
     while !oid.is_empty() {
-        let commit = base::get_commit(&oid)?;
+        let commit = match base::get_commit(&oid){
+            Ok(val) => val,
+            Err(_) => break
+        };
         println!("commit {}",oid);
         println!("{}",commit[0].2);
         oid = commit[0].1.clone();
