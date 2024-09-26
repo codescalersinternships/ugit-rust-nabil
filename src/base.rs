@@ -46,10 +46,6 @@ pub fn write_tree(directory: &str) -> Result<String, io::Error>{
             None => return Err(Error::new(ErrorKind::InvalidData, "Failed to convert path to string")),
         };
         
-        let entry_name = match entry.file_name().into_string() {
-            Ok(name) => name,
-            Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Failed to convert entry name to string")),
-        };
 
         if is_ignored(&full_path) {
             continue;
@@ -64,13 +60,17 @@ pub fn write_tree(directory: &str) -> Result<String, io::Error>{
         }else {
             continue;
         };
+        let entry_name = match entry.file_name().into_string() {
+            Ok(name) => name,
+            Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Failed to convert entry name to string")),
+        };
         entries.push((entry_name, oid, entry_type));
     }
 
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut tree:String = String::new();
-    for entry in &entries {
+    let mut tree = String::new();
+    for entry in entries {
         let s = format!("{} {} {}\n", entry.2, entry.1, entry.0);
         tree.push_str(&s);
     }
@@ -140,4 +140,98 @@ pub fn read_tree(tree_oid: &str) -> Result<(), io::Error> {
         file.write_all(&object_data.as_bytes())?;
     }
     Ok(())
+}
+
+
+
+pub fn commit(msg: &str) -> Result<String, io::Error> {
+    let tree = write_tree(".")?;
+    let mut commit_str =  format!("tree {} \n",tree);
+    let head = data::get_ref("HEAD")?;
+    //println!("head is{}",head);
+    if !head.is_empty() {
+        commit_str.push_str(&format!("parent {}\n",head));
+    }
+    commit_str.push_str("\n");
+    commit_str.push_str(msg);
+    commit_str.push_str("\n");
+
+    let oid = data::hash_object(&commit_str.into_bytes(), "commit")?;
+    data::update_ref("HEAD", &oid)?;
+    return Ok(oid);
+}
+
+
+pub fn get_commit(oid: &str) -> Result<Vec<(String, String, String)>, io::Error>  {
+    let comit = data::get_object(&oid, "commit")?;
+    let mut parent = String::new();
+    let mut tree = String::new();
+    let mut message = String::new();
+    //println!("hereee\n {}\n here awy b2", comit);
+    for entry in comit.lines() {
+        let space = match entry.chars().position(|c| c == ' '){
+            Some(val) => val,
+             None => break,
+        };
+        let cur_key= &entry[..space];
+        let cur_value= &entry[space..];
+        if cur_key == "tree" {
+            tree = String::from(cur_value);
+        }else if cur_key == "parent" {
+            parent = String::from(cur_value);
+        }else {
+            panic!("unkonown key");
+        }
+        message.push_str(entry);
+        message.push_str("\n");
+    }
+    if message.len() > 0 {
+        message.pop();
+    }
+
+    let mut commit_val:Vec<(String, String, String)> = Vec::new();
+    commit_val.push((tree,parent,message));
+    //println!("{} {} {}",commit_val[0].0, commit_val[0].1, commit_val[0].2);
+    return Ok(commit_val);
+}
+
+pub fn checkout(oid: &str) -> Result<(), io::Error>{
+    let comit = get_commit(&oid)?;
+    read_tree(&comit[0].1)?;
+    println!("read");
+    data::update_ref("HEAD", &oid)?;
+    Ok(())
+}
+
+pub fn create_tag(name: &str, oid: &str) -> Result<(), io::Error>{
+    data::update_ref(&format!("refs/tags/{name}"),&oid)
+}
+
+fn get_oid(name_par: &str) -> Result<String, io::Error> {
+    let mut name = name_par;
+    if name == "@" {
+        name = "HEAD";
+    }
+    // Name is ref
+    let refs_to_try = vec![
+        format!("{}", name),
+        format!("refs/{}", name),
+        format!("refs/tags/{}", name),
+        format!("refs/heads/{}", name),
+    ];
+
+    for r in refs_to_try {
+        let ref_ret = data::get_ref(&r)?;
+        if ref_ret.len() != 0 {
+            return Ok(ref_ret);
+        }
+    }
+
+    // Name is SHA1
+    let is_hex = name.chars().all(|c| c.is_ascii_hexdigit());
+    if name.len() == 40 && is_hex {
+        return Ok(name.to_string());
+    }
+
+    panic!("Unknown name {}", name);
 }

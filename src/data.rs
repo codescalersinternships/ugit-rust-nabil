@@ -55,3 +55,28 @@ pub fn get_object(oid: &str, expected: &str) -> Result<String, io::Error>{
     }
     return Ok(content)
 }
+
+pub fn update_ref(reff: &str, oid: &str) -> Result<(), io::Error>{
+    let ref_path = format!("{}/{}", GIT_DIR,reff);
+    if !Path::new(&ref_path).exists() {
+        match fs::File::create(&ref_path){
+            Ok(_) => return Ok(()),
+            Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("couldn't create head file: {}",err))),
+        };
+    }
+    match fs::write(&ref_path,oid){
+        Ok(_) => return Ok(()),
+        Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("file of head isn't found err: {}",err))),
+    }
+}
+
+pub fn get_ref(reff: &str) -> Result<String, io::Error> {
+    let ref_path = format!("{}/{}", GIT_DIR, reff);
+    if !Path::new(&ref_path).exists() {
+        return Ok(String::new());
+    }
+    match fs::read(&ref_path) {
+        Ok(content) => Ok(String::from_utf8(content).unwrap_or_else(|_| String::new())),
+        Err(_) => Ok(String::new()),
+    }
+}
