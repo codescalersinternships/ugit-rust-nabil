@@ -59,8 +59,17 @@ pub fn get_object(oid: &str, expected: &str) -> Result<String, io::Error>{
 pub fn update_ref(reff: &str, oid: &str) -> Result<(), io::Error>{
     let ref_path = format!("{}/{}", GIT_DIR,reff);
     if !Path::new(&ref_path).exists() {
-        match fs::File::create(&ref_path){
-            Ok(_) => return Ok(()),
+        let path = std::path::Path::new(&ref_path);
+        let prefix = match path.parent(){
+            Some(val) => val,
+            None => return Err(Error::new(ErrorKind::InvalidData, "cant get parent path in update ref")),
+        };
+        match fs::create_dir_all(prefix){
+            Ok(val) => val,
+            Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("couldn't create parent path in update ref: {}",err))),
+        };
+        match fs::File::create(path){
+            Ok(val) => val,
             Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("couldn't create head file: {}",err))),
         };
     }
