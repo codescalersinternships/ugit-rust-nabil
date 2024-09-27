@@ -39,8 +39,7 @@ pub fn hash_object(data: &Vec<u8>,  expected: &str) -> Result<String, io::Error>
 }
 
 pub fn get_object(oid: &str, expected: &str) -> Result<String, io::Error>{
-    let file_content = fs::read(format!("{}/objects/{}", GIT_DIR, oid))?;
-
+    let file_content = fs::read(format!("{}/objects/{}", GIT_DIR, oid.trim()))?;
     let null_index = match file_content.iter().position(|&b| b == 0){
         Some(val) => val,
         None => return Err(Error::new(ErrorKind::InvalidData, "Invalid object format: no null separator found")),
@@ -88,4 +87,23 @@ pub fn get_ref(reff: &str) -> Result<String, io::Error> {
         Ok(content) => Ok(String::from_utf8(content).unwrap_or_else(|_| String::new())),
         Err(_) => Ok(String::new()),
     }
+}
+
+pub fn iter_refs() -> Result<Vec<(String, String)>,io::Error> {
+    let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/tags/", GIT_DIR))?;
+    let mut entries = vec!["HEAD".to_string()];
+    for entry in dir {
+        let entry = entry?;
+        let entry_name = match entry.file_name().into_string() {
+            Ok(name) => name,
+            Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Failed to convert entry name to string")),
+        };
+        entries.push(entry_name);
+    }
+
+    let mut ret = Vec::new();
+    for entry in entries {
+        ret.push((entry.clone(),    get_ref(&entry.clone())?));
+    }
+    Ok(ret)
 }

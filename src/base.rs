@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io::{self, Error, ErrorKind, Write}, path::Path};
+use std::{collections::{HashMap, HashSet}, fs, io::{self, Error, ErrorKind, Write}, path::Path};
 
 use crate::data::{self, hash_object};
 
@@ -234,4 +234,33 @@ fn get_oid(name_par: &str) -> Result<String, io::Error> {
     }
 
     panic!("Unknown name {}", name);
+}
+
+
+pub fn iter_commits_and_parents(oids: HashSet<String>) -> Result<Vec<String>, io::Error>{
+    let mut oids = oids;
+    let mut visited = HashSet::new();
+    let mut result = Vec::new();
+    while let Some(oid) = oids.iter().next().cloned() {
+        oids.remove(&oid);
+
+        if visited.contains(&oid) || oid.is_empty() {
+            continue;
+        }
+        visited.insert(oid.clone());
+        result.push(oid.clone());
+        
+        let comit = match get_commit(&oid.trim()){
+            Ok(val) => val,
+            Err(_) => continue
+        };
+        if comit.is_empty() || comit[0].1.is_empty() {
+            continue;
+        }
+        oids.insert(comit[0].1.clone());
+
+    }
+
+    Ok(result)
+    
 }

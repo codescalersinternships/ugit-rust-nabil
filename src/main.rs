@@ -1,4 +1,4 @@
-use std::{env, fs::{self}, io::{self}};
+use std::{collections::HashSet, env, fs::{self}, io::{self}};
 
 mod data;
 mod base;
@@ -41,6 +41,8 @@ fn main() {
             "@" 
         };
         tag(&args[2], oid).unwrap()
+    }else if args[1] == "k" {
+        k().unwrap()
     }
     
 }
@@ -72,5 +74,27 @@ fn log(text: &str) -> Result<(), io::Error>{
 
 fn tag(name: &str, oid: &str) -> Result<(), io::Error>{
     base::create_tag(name, &oid)?;
+    Ok(())
+}
+
+fn k() -> Result<(), io::Error> {
+    let mut dot = String::from("digraph commits {\n");
+    let mut oids = HashSet::new();
+    
+    for (refname, r) in data::iter_refs()? {
+        dot += &format!("\"{}\" [shape=note]\n", refname);
+        dot += &format!("\"{}\" -> \"{}\"\n", refname, r);
+        oids.insert(r);
+    } 
+
+    for oid in base::iter_commits_and_parents(oids)? {
+        let commit = base::get_commit(&oid)?;
+        dot += &format!("\"{}\" [shape=box style=filled label=\"{}\"]\n", oid, &oid[..10]);
+        let parent = commit[0].1.clone();
+        dot += &format!("\"{}\" -> \"{}\"\n", oid, parent);
+    }
+    dot += "}\n";
+
+    println!("{}", dot);
     Ok(())
 }
