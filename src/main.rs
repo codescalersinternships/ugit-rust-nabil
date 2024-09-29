@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, fs::{self}, io::{self}};
+use std::{collections::VecDeque, env, fs::{self}, io::{self, Error}};
 
 mod data;
 mod base;
@@ -43,6 +43,8 @@ fn main() {
         tag(&args[2], oid).unwrap()
     }else if args[1] == "k" {
         k().unwrap()
+    }else if args[1] == "branch" {
+        branch(&args[2], &args[3]).unwrap();
     }
     
 }
@@ -56,18 +58,23 @@ fn hash_object(file_path: &str) -> Result<(), io::Error> {
 }
 
 fn log(text: &str) -> Result<(), io::Error>{
-    let mut oid: String = data::get_ref("HEAD")?;
-    if !text.is_empty() && ( text != "HEAD" || text != "@") {
+    let mut oid: String = match data::get_ref("HEAD", true)?.value{
+        Some(v) => v,
+        None => return Err(Error::new(io::ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+    };
+    if !text.is_empty() && text != "HEAD" && text != "@" {
         oid = String::from(text);
     }
-    while !oid.is_empty() {
+    let mut oids = VecDeque::new();
+    oids.push_back(oid);
+    for oid in base::iter_commits_and_parents(oids)? {
         let commit = match base::get_commit(&oid){
             Ok(val) => val,
             Err(_) => break
         };
         println!("commit {}",oid);
-        println!("{}",commit[0].2);
-        oid = commit[0].1.clone();
+        println!("{}",commit.2);
+        
     }
     Ok(())
 }
@@ -79,22 +86,28 @@ fn tag(name: &str, oid: &str) -> Result<(), io::Error>{
 
 fn k() -> Result<(), io::Error> {
     let mut dot = String::from("digraph commits {\n");
-    let mut oids = HashSet::new();
+    let mut oids = VecDeque::new();
     
-    for (refname, r) in data::iter_refs()? {
+    for (refname, r) in data::iter_refs(false)? {
         dot += &format!("\"{}\" [shape=note]\n", refname);
         dot += &format!("\"{}\" -> \"{}\"\n", refname, r);
-        oids.insert(r);
+        oids.push_back(r);
     } 
 
     for oid in base::iter_commits_and_parents(oids)? {
         let commit = base::get_commit(&oid)?;
         dot += &format!("\"{}\" [shape=box style=filled label=\"{}\"]\n", oid, &oid[..10]);
-        let parent = commit[0].1.clone();
+        let parent = commit.1.clone();
         dot += &format!("\"{}\" -> \"{}\"\n", oid, parent);
     }
     dot += "}\n";
 
     println!("{}", dot);
+    Ok(())
+}
+
+fn branch(name: &str, start_point: &str) -> Result<(), io::Error> {
+    base::create_branch(name, &start_point)?;
+    println!("Branch {name} created at {}", &start_point[0..10]);
     Ok(())
 }

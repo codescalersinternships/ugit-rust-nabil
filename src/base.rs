@@ -1,6 +1,6 @@
-use std::{collections::{HashMap, HashSet}, fs, io::{self, Error, ErrorKind, Write}, path::Path};
+use std::{collections::{HashMap, HashSet, VecDeque}, fs, io::{self, Error, ErrorKind, Write}, path::Path};
 
-use crate::data::{self, hash_object};
+use crate::data::{self, hash_object, update_ref, RefValue};
 
 pub fn empty_current_directory() -> Result<(), io::Error> {
     let directory = Path::new(".");
@@ -147,7 +147,10 @@ pub fn read_tree(tree_oid: &str) -> Result<(), io::Error> {
 pub fn commit(msg: &str) -> Result<String, io::Error> {
     let tree = write_tree(".")?;
     let mut commit_str =  format!("tree {} \n",tree);
-    let head = data::get_ref("HEAD")?;
+    let head = match data::get_ref("HEAD", true)?.value{
+        Some(v) => v,
+        None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+    };
     //println!("head is{}",head);
     if !head.is_empty() {
         commit_str.push_str(&format!("parent {}\n",head));
@@ -157,12 +160,12 @@ pub fn commit(msg: &str) -> Result<String, io::Error> {
     commit_str.push_str("\n");
 
     let oid = data::hash_object(&commit_str.into_bytes(), "commit")?;
-    data::update_ref("HEAD", &oid)?;
+    data::update_ref("HEAD", &RefValue{symbolic:None, value: Some(oid.clone())}, true )?;
     return Ok(oid);
 }
 
 
-pub fn get_commit(oid: &str) -> Result<Vec<(String, String, String)>, io::Error>  {
+pub fn get_commit(oid: &str) -> Result<(String, String, String), io::Error>  {
     let comit = data::get_object(&oid, "commit")?;
     let mut parent = String::new();
     let mut tree = String::new();
@@ -189,22 +192,20 @@ pub fn get_commit(oid: &str) -> Result<Vec<(String, String, String)>, io::Error>
         message.pop();
     }
 
-    let mut commit_val:Vec<(String, String, String)> = Vec::new();
-    commit_val.push((tree,parent,message));
     //println!("{} {} {}",commit_val[0].0, commit_val[0].1, commit_val[0].2);
-    return Ok(commit_val);
+    return Ok((tree,parent,message));
 }
 
 pub fn checkout(oid: &str) -> Result<(), io::Error>{
     let comit = get_commit(&oid)?;
-    read_tree(&comit[0].1)?;
+    read_tree(&comit.1)?;
     println!("read");
-    data::update_ref("HEAD", &oid)?;
+    data::update_ref("HEAD", &RefValue { symbolic: None, value: Some(String::from(oid)) }, true)?;
     Ok(())
 }
 
 pub fn create_tag(name: &str, oid: &str) -> Result<(), io::Error>{
-    data::update_ref(&format!("refs/tags/{name}"),&oid)
+    data::update_ref(&format!("refs/tags/{name}"),&RefValue { symbolic: None, value: Some(String::from(oid)) }, true)
 }
 
 fn get_oid(name_par: &str) -> Result<String, io::Error> {
@@ -221,7 +222,10 @@ fn get_oid(name_par: &str) -> Result<String, io::Error> {
     ];
 
     for r in refs_to_try {
-        let ref_ret = data::get_ref(&r)?;
+        let ref_ret = match data::get_ref(&r, true)?.value {
+            Some(v) => v,
+            None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+        };
         if ref_ret.len() != 0 {
             return Ok(ref_ret);
         }
@@ -237,12 +241,16 @@ fn get_oid(name_par: &str) -> Result<String, io::Error> {
 }
 
 
-pub fn iter_commits_and_parents(oids: HashSet<String>) -> Result<Vec<String>, io::Error>{
+pub fn iter_commits_and_parents(oids: VecDeque<String>) -> Result<Vec<String>, io::Error>{
     let mut oids = oids;
     let mut visited = HashSet::new();
     let mut result = Vec::new();
-    while let Some(oid) = oids.iter().next().cloned() {
-        oids.remove(&oid);
+    while !oids.is_empty() {
+        let oid = match oids.front(){
+            Some(val) => val.clone(),
+            None => break
+        };
+        oids.pop_front();
 
         if visited.contains(&oid) || oid.is_empty() {
             continue;
@@ -254,13 +262,18 @@ pub fn iter_commits_and_parents(oids: HashSet<String>) -> Result<Vec<String>, io
             Ok(val) => val,
             Err(_) => continue
         };
-        if comit.is_empty() || comit[0].1.is_empty() {
+        if comit.1.is_empty() {
             continue;
         }
-        oids.insert(comit[0].1.clone());
+        oids.push_front(comit.1.clone());
 
     }
 
     Ok(result)
     
+}
+
+
+pub fn create_branch(name: &str, oid: &str) -> Result<(), io::Error>{
+    update_ref(name, &RefValue { symbolic: None, value: Some(String::from(oid)) }, true)
 }

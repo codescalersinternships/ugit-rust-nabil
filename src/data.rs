@@ -1,4 +1,4 @@
-use std::{fs, io::{self, Error, ErrorKind, Write}, path::Path};
+use std::{ fs, io::{self, Error, ErrorKind, Write}, path::Path};
 
 use sha1::{Digest, Sha1};
 
@@ -55,8 +55,16 @@ pub fn get_object(oid: &str, expected: &str) -> Result<String, io::Error>{
     return Ok(content)
 }
 
-pub fn update_ref(reff: &str, oid: &str) -> Result<(), io::Error>{
-    let ref_path = format!("{}/{}", GIT_DIR,reff);
+pub struct RefValue {
+    pub symbolic: Option<bool>,
+    pub value: Option<String>
+}
+
+pub fn update_ref(reff: &str, value: &RefValue, deref: bool) -> Result<(), io::Error>{
+    assert!(value.symbolic.is_none());
+    let real_reff = _get_ref_internal(reff,deref)?.0;
+    assert!(!real_reff.is_empty());
+    let ref_path = format!("{}/{}", GIT_DIR,real_reff);
     if !Path::new(&ref_path).exists() {
         let path = std::path::Path::new(&ref_path);
         let prefix = match path.parent(){
@@ -72,24 +80,28 @@ pub fn update_ref(reff: &str, oid: &str) -> Result<(), io::Error>{
             Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("couldn't create head file: {}",err))),
         };
     }
-    match fs::write(&ref_path,oid){
+    let val = match &value.value {
+        Some(v) => {
+            let mut ret = String::new();
+            if let Some(true) =value.symbolic {
+                ret = String::from("ref: ");
+                ret += v;
+            }
+            ret
+        },
+        None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+    };
+    match fs::write(&ref_path,&val){
         Ok(_) => return Ok(()),
         Err(err) => return Err(Error::new(ErrorKind::InvalidData, format!("file of head isn't found err: {}",err))),
     }
 }
 
-pub fn get_ref(reff: &str) -> Result<String, io::Error> {
-    let ref_path = format!("{}/{}", GIT_DIR, reff);
-    if !Path::new(&ref_path).exists() {
-        return Ok(String::new());
-    }
-    match fs::read(&ref_path) {
-        Ok(content) => Ok(String::from_utf8(content).unwrap_or_else(|_| String::new())),
-        Err(_) => Ok(String::new()),
-    }
+pub fn get_ref(reff: &str, deref: bool) -> Result<RefValue, io::Error> {
+    return Ok(_get_ref_internal(reff, deref)?.1);
 }
 
-pub fn iter_refs() -> Result<Vec<(String, String)>,io::Error> {
+pub fn iter_refs(deref: bool) -> Result<Vec<(String, String)>,io::Error> {
     let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/tags/", GIT_DIR))?;
     let mut entries = vec!["HEAD".to_string()];
     for entry in dir {
@@ -103,7 +115,32 @@ pub fn iter_refs() -> Result<Vec<(String, String)>,io::Error> {
 
     let mut ret = Vec::new();
     for entry in entries {
-        ret.push((entry.clone(),    get_ref(&entry.clone())?));
+        ret.push(( 
+            entry.clone(),
+            match get_ref(&entry.clone(), deref)?.value{
+                Some(v) => v,
+                None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+            }));
     }
     Ok(ret)
+}
+
+
+fn _get_ref_internal(reff: &str, deref: bool) -> Result<(String, RefValue), io::Error>{
+    let ref_path = format!("{}/{}", GIT_DIR, reff);
+    if !Path::new(&ref_path).exists() {
+        return Ok((String::new(),RefValue { symbolic: None, value: None }));
+    }
+    let value = match fs::read(&ref_path) {
+        Ok(content) => String::from_utf8(content).unwrap_or_else(|_| String::new()),
+        Err(_) => return Ok((String::new(),RefValue { symbolic: None, value: None })),
+    };
+    let symbolic = value.len() > 4 && value[0..4] == (*"ref:");
+    if symbolic {
+        if deref {
+            return Ok(_get_ref_internal(&value[4..], true)?);
+        }
+        
+    }
+    Ok((String::from(reff), RefValue{symbolic: Some(symbolic), value: Some(value)}))
 }
