@@ -245,28 +245,19 @@ pub fn iter_commits_and_parents(oids: VecDeque<String>) -> Result<Vec<String>, i
     let mut oids = oids;
     let mut visited = HashSet::new();
     let mut result = Vec::new();
-    while !oids.is_empty() {
-        let oid = match oids.front(){
-            Some(val) => val.clone(),
-            None => break
-        };
-        oids.pop_front();
-
-        if visited.contains(&oid) || oid.is_empty() {
+    while let Some(oid) = oids.pop_front() {
+        if !visited.insert(oid.clone()) || oid.is_empty() {
             continue;
         }
-        visited.insert(oid.clone());
         result.push(oid.clone());
         
         let comit = match get_commit(&oid.trim()){
             Ok(val) => val,
             Err(_) => continue
         };
-        if comit.1.is_empty() {
-            continue;
+        if !comit.1.is_empty() {
+            oids.push_front(comit.1);
         }
-        oids.push_front(comit.1.clone());
-
     }
 
     Ok(result)

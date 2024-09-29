@@ -97,8 +97,7 @@ fn k() -> Result<(), io::Error> {
     for oid in base::iter_commits_and_parents(oids)? {
         let commit = base::get_commit(&oid)?;
         dot += &format!("\"{}\" [shape=box style=filled label=\"{}\"]\n", oid, &oid[..10]);
-        let parent = commit.1.clone();
-        dot += &format!("\"{}\" -> \"{}\"\n", oid, parent);
+        dot += &format!("\"{}\" -> \"{}\"\n", oid, commit.1);
     }
     dot += "}\n";
 
