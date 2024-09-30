@@ -61,7 +61,6 @@ pub struct RefValue {
 }
 
 pub fn update_ref(reff: &str, value: &RefValue, deref: bool) -> Result<(), io::Error>{
-    assert!(value.symbolic.is_none());
     let real_reff = _get_ref_internal(reff,deref)?.0;
     assert!(!real_reff.is_empty());
     let ref_path = format!("{}/{}", GIT_DIR,real_reff);
@@ -85,8 +84,8 @@ pub fn update_ref(reff: &str, value: &RefValue, deref: bool) -> Result<(), io::E
             let mut ret = String::new();
             if let Some(true) =value.symbolic {
                 ret = String::from("ref: ");
-                ret += v;
             }
+            ret += v;
             ret
         },
         None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
@@ -101,7 +100,7 @@ pub fn get_ref(reff: &str, deref: bool) -> Result<RefValue, io::Error> {
     return Ok(_get_ref_internal(reff, deref)?.1);
 }
 
-pub fn iter_refs(deref: bool) -> Result<Vec<(String, String)>,io::Error> {
+pub fn iter_refs(prefix: &str, deref: bool) -> Result<Vec<(String, RefValue)>,io::Error> {
     let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/tags/", GIT_DIR))?;
     let mut entries = vec!["HEAD".to_string()];
     for entry in dir {
@@ -115,12 +114,12 @@ pub fn iter_refs(deref: bool) -> Result<Vec<(String, String)>,io::Error> {
 
     let mut ret = Vec::new();
     for entry in entries {
+        if !entry.starts_with(prefix) {
+            continue;
+        }
         ret.push(( 
             entry.clone(),
-            match get_ref(&entry.clone(), deref)?.value{
-                Some(v) => v,
-                None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
-            }));
+            get_ref(&entry.clone(), deref)?));
     }
     Ok(ret)
 }
@@ -128,13 +127,13 @@ pub fn iter_refs(deref: bool) -> Result<Vec<(String, String)>,io::Error> {
 
 fn _get_ref_internal(reff: &str, deref: bool) -> Result<(String, RefValue), io::Error>{
     let ref_path = format!("{}/{}", GIT_DIR, reff);
-    if !Path::new(&ref_path).exists() {
-        return Ok((String::new(),RefValue { symbolic: None, value: None }));
+    let mut value:String = String::new();
+    if Path::new(&ref_path).exists() {
+        value = match fs::read(&ref_path) {
+            Ok(content) => String::from_utf8(content).unwrap_or_else(|_| String::new()),
+            Err(_) => return Ok((String::new(),RefValue { symbolic: None, value: None })),
+        };
     }
-    let value = match fs::read(&ref_path) {
-        Ok(content) => String::from_utf8(content).unwrap_or_else(|_| String::new()),
-        Err(_) => return Ok((String::new(),RefValue { symbolic: None, value: None })),
-    };
     let symbolic = value.len() > 4 && value[0..4] == (*"ref:");
     if symbolic {
         if deref {

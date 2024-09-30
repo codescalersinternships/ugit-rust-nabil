@@ -1,7 +1,15 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, fs, io::{self, Error, ErrorKind, Write}, path::Path};
+use std::{collections::{HashMap, HashSet, VecDeque}, fs, io::{self, Error, ErrorKind, Write}, path::{Path, PathBuf}, vec};
 
-use crate::data::{self, hash_object, update_ref, RefValue};
+use crate::data::{self, get_ref, hash_object, iter_refs, update_ref, RefValue};
 
+use realpath::*; 
+
+
+pub fn init() -> Result<(), io::Error>{
+    data::init()?;
+    update_ref("HEAD", &RefValue { symbolic: Some(true), value: Some(String::from("refs/heads/master")) }, true)?;
+    Ok(())
+}
 pub fn empty_current_directory() -> Result<(), io::Error> {
     let directory = Path::new(".");
     let dir = fs::read_dir(directory)?;
@@ -196,19 +204,32 @@ pub fn get_commit(oid: &str) -> Result<(String, String, String), io::Error>  {
     return Ok((tree,parent,message));
 }
 
-pub fn checkout(oid: &str) -> Result<(), io::Error>{
-    let comit = get_commit(&oid)?;
+pub fn checkout(name: &str) -> Result<(), io::Error>{
+    let oid = get_oid(name)?;
+    let comit = get_commit(&name)?;
     read_tree(&comit.1)?;
-    println!("read");
-    data::update_ref("HEAD", &RefValue { symbolic: None, value: Some(String::from(oid)) }, true)?;
+    let HEAD: RefValue;
+    if is_branch(name)? {
+        HEAD = RefValue{symbolic: Some(true), value: Some(format!("refs/heads/{name}"))}
+    }else {
+        HEAD = RefValue{symbolic: Some(false), value: Some(oid)}
+    }
+    data::update_ref("HEAD", &HEAD, false)?;
     Ok(())
+}
+
+fn is_branch(name: &str) -> Result<bool, io::Error> {
+    let _reff = match get_ref(&format!("refs/heads/{name}"), true)?.value{
+        Some(_val) => return Ok(true),
+        None => return Ok(false)
+    };
 }
 
 pub fn create_tag(name: &str, oid: &str) -> Result<(), io::Error>{
     data::update_ref(&format!("refs/tags/{name}"),&RefValue { symbolic: None, value: Some(String::from(oid)) }, true)
 }
 
-fn get_oid(name_par: &str) -> Result<String, io::Error> {
+pub fn get_oid(name_par: &str) -> Result<String, io::Error> {
     let mut name = name_par;
     if name == "@" {
         name = "HEAD";
@@ -267,4 +288,37 @@ pub fn iter_commits_and_parents(oids: VecDeque<String>) -> Result<Vec<String>, i
 
 pub fn create_branch(name: &str, oid: &str) -> Result<(), io::Error>{
     update_ref(name, &RefValue { symbolic: None, value: Some(String::from(oid)) }, true)
+}
+
+pub fn get_branch_name() -> Result<String, io::Error> {
+    let HEAD = get_ref("HEAD", false)?;
+    if let None = HEAD.symbolic {
+        return Ok(String::new());
+    }
+    let head = match HEAD.value{
+        Some(val) => val,
+        None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
+    };
+    if !head.starts_with("refs/heads/") {
+        panic!("head doesn't start with refs/heads/");
+    }
+    Ok(relpath(&head, "refs/heads/")?)
+}
+
+fn relpath(refname: &str, base: &str) -> Result<String, io::Error> {
+    let ref_path = Path::new(refname);
+    let base_path = Path::new(base);
+    
+    match ref_path.strip_prefix(base_path) {
+        Ok(relative_path) => Ok(relative_path.to_string_lossy().into_owned()),
+        Err(_) => return Err(Error::new(ErrorKind::InvalidData, format!("refname isn't under base"))),
+    }
+}
+
+pub fn iter_branch_names() -> Result<Vec<String>, io::Error> {
+    let mut branches = Vec::new();
+    for (refname, _) in iter_refs("refs/heads/", true)? {
+        branches.push(relpath(&refname, "refs/heads/")?);
+    }
+    Ok(branches)
 }
