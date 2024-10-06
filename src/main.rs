@@ -85,15 +85,12 @@ fn log(text: &str) -> Result<(), io::Error>{
         Some(v) => v,
         None => return Err(Error::new(io::ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
     };
-    println!("{oid}");
     if !text.is_empty() && text != "HEAD" && text != "@" {
         oid = String::from(text);
     }
 
-    println!("{oid}");
     let mut oids = VecDeque::new();
     oids.push_back(oid);
-    println!("{oids:?}");
     let mut refs: HashMap<String, Vec<String>> = HashMap::new();
     for (refname, reff) in data::iter_refs("",true)?{
         refs.entry(

@@ -241,7 +241,7 @@ pub fn create_tag(name: &str, oid: &str) -> Result<(), io::Error>{
 pub fn get_oid(name_par: &str) -> Result<String, io::Error> {
     let mut name = name_par;
     if name == "@" {
-        name = "HEAD";
+        name = "master";
     }
     // Name is ref
     let refs_to_try = vec![
@@ -313,20 +313,21 @@ pub fn get_branch_name() -> Result<String, io::Error> {
         Some(val) => val,
         None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value"))),
     };
-    if !head.starts_with("refs/heads/") {
+    println!("{head}");
+    if !head[5..].starts_with("refs/heads/") {
         panic!("head doesn't start with refs/heads/");
     }
     Ok(relpath(&head, "refs/heads/")?)
 }
 
 fn relpath(refname: &str, base: &str) -> Result<String, io::Error> {
-    let ref_path = Path::new(refname);
+    let ref_path = Path::new(&refname[5..]);
     let base_path = Path::new(base);
-    
     match ref_path.strip_prefix(base_path) {
         Ok(relative_path) => Ok(relative_path.to_string_lossy().into_owned()),
         Err(_) => return Err(Error::new(ErrorKind::InvalidData, format!("refname isn't under base"))),
     }
+    
 }
 
 pub fn iter_branch_names() -> Result<Vec<String>, io::Error> {

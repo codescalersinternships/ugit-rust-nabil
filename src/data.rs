@@ -107,7 +107,7 @@ pub fn get_ref(reff: &str, deref: bool) -> Result<RefValue, io::Error> {
 }
 
 pub fn iter_refs(prefix: &str, deref: bool) -> Result<Vec<(String, RefValue)>,io::Error> {
-    let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/tags/", GIT_DIR))?;
+    let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/", GIT_DIR))?;
     let mut entries = vec!["HEAD".to_string(), "MERGE_HEAD".to_string()];
     for entry in dir {
         let entry = entry?;
@@ -147,7 +147,7 @@ fn _get_ref_internal(reff: &str, deref: bool) -> Result<(String, RefValue), io::
     let symbolic = value.len() > 4 && value[0..4] == (*"ref:");
     if symbolic {
         if deref {
-            return Ok(_get_ref_internal(&value[4..], true)?);
+            return Ok(_get_ref_internal(&value[5..], true)?);
         }
         
     }
