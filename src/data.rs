@@ -96,13 +96,19 @@ pub fn update_ref(reff: &str, value: &RefValue, deref: bool) -> Result<(), io::E
     }
 }
 
+pub fn delete_ref(reff: &str, deref: bool) -> Result<(), io::Error> {
+    let real_reff = _get_ref_internal(reff, deref)?.0;
+    fs::remove_file(format!("{}/{}", GIT_DIR, real_reff))?;
+    Ok(())
+}
+
 pub fn get_ref(reff: &str, deref: bool) -> Result<RefValue, io::Error> {
     return Ok(_get_ref_internal(reff, deref)?.1);
 }
 
 pub fn iter_refs(prefix: &str, deref: bool) -> Result<Vec<(String, RefValue)>,io::Error> {
     let dir: fs::ReadDir = fs::read_dir(format!("{}/refs/tags/", GIT_DIR))?;
-    let mut entries = vec!["HEAD".to_string()];
+    let mut entries = vec!["HEAD".to_string(), "MERGE_HEAD".to_string()];
     for entry in dir {
         let entry = entry?;
         let entry_name = match entry.file_name().into_string() {
@@ -117,9 +123,13 @@ pub fn iter_refs(prefix: &str, deref: bool) -> Result<Vec<(String, RefValue)>,io
         if !entry.starts_with(prefix) {
             continue;
         }
-        ret.push(( 
-            entry.clone(),
-            get_ref(&entry.clone(), deref)?));
+        let reff = get_ref(&entry.clone(), deref)?;
+        if let Some(_val) = reff.value {
+            ret.push(( 
+                entry.clone(),
+                get_ref(&entry.clone(), deref)?));
+        }
+        
     }
     Ok(ret)
 }

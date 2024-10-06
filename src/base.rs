@@ -1,9 +1,14 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, fs, io::{self, Error, ErrorKind, Write}, path::{Path, PathBuf}, vec};
+use std::{collections::{vec_deque, HashMap, HashSet, VecDeque}, fs::{self, File}, io::{self, Error, ErrorKind, Read, Write}, path::{Path, PathBuf}, vec};
 
-use crate::data::{self, get_ref, hash_object, iter_refs, update_ref, RefValue};
+use walkdir::WalkDir;
 
-use realpath::*; 
+use crate::{data::{self, get_ref, hash_object, iter_refs, update_ref, RefValue}, diff};
 
+pub struct Commit {
+    pub tree: String,
+    pub parents: Vec<String>,
+    pub msg: String,
+}
 
 pub fn init() -> Result<(), io::Error>{
     data::init()?;
@@ -111,7 +116,7 @@ fn iter_tree_entries(oid: &str) -> Result<Vec<(String, String, String)>, io::Err
 }
 
 
-fn get_tree(oid: &str, base_path: &str) -> Result< HashMap<String, String>, io::Error> {
+pub fn get_tree(oid: &str, base_path: &str) -> Result< HashMap<String, String>, io::Error> {
     let mut result: HashMap<String, String> = HashMap::new();
 
     for (type_, oid, name) in iter_tree_entries(oid)? {
@@ -163,6 +168,10 @@ pub fn commit(msg: &str) -> Result<String, io::Error> {
     if !head.is_empty() {
         commit_str.push_str(&format!("parent {}\n",head));
     }
+    if let Some(MERGE_HEAD) = data::get_ref("MERGE_HEAD", true)?.value {
+        commit_str.push_str(&format!("parent {MERGE_HEAD}\n"));
+        data::delete_ref("MERGE_HEAD", false);
+    }
     commit_str.push_str("\n");
     commit_str.push_str(msg);
     commit_str.push_str("\n");
@@ -173,9 +182,9 @@ pub fn commit(msg: &str) -> Result<String, io::Error> {
 }
 
 
-pub fn get_commit(oid: &str) -> Result<(String, String, String), io::Error>  {
+pub fn get_commit(oid: &str) -> Result<Commit, io::Error>  {
     let comit = data::get_object(&oid, "commit")?;
-    let mut parent = String::new();
+    let mut parents = Vec::new();
     let mut tree = String::new();
     let mut message = String::new();
     //println!("hereee\n {}\n here awy b2", comit);
@@ -189,7 +198,7 @@ pub fn get_commit(oid: &str) -> Result<(String, String, String), io::Error>  {
         if cur_key == "tree" {
             tree = String::from(cur_value);
         }else if cur_key == "parent" {
-            parent = String::from(cur_value);
+            parents.push(String::from(cur_value));
         }else {
             panic!("unkonown key");
         }
@@ -201,13 +210,13 @@ pub fn get_commit(oid: &str) -> Result<(String, String, String), io::Error>  {
     }
 
     //println!("{} {} {}",commit_val[0].0, commit_val[0].1, commit_val[0].2);
-    return Ok((tree,parent,message));
+    return Ok(Commit { tree: tree, parents: parents, msg: message });
 }
 
 pub fn checkout(name: &str) -> Result<(), io::Error>{
     let oid = get_oid(name)?;
     let comit = get_commit(&name)?;
-    read_tree(&comit.1)?;
+    read_tree(&comit.parents[0])?;
     let HEAD: RefValue;
     if is_branch(name)? {
         HEAD = RefValue{symbolic: Some(true), value: Some(format!("refs/heads/{name}"))}
@@ -267,7 +276,7 @@ pub fn iter_commits_and_parents(oids: VecDeque<String>) -> Result<Vec<String>, i
     let mut visited = HashSet::new();
     let mut result = Vec::new();
     while let Some(oid) = oids.pop_front() {
-        if !visited.insert(oid.clone()) || oid.is_empty() {
+        if oid.is_empty() || !visited.insert(oid.clone()) {
             continue;
         }
         result.push(oid.clone());
@@ -276,8 +285,13 @@ pub fn iter_commits_and_parents(oids: VecDeque<String>) -> Result<Vec<String>, i
             Ok(val) => val,
             Err(_) => continue
         };
-        if !comit.1.is_empty() {
-            oids.push_front(comit.1);
+        if let Some(first_parent) = comit.parents.get(0) {
+            oids.push_front(first_parent.clone());
+        }
+
+        // Push the rest of the parents (if any) to the back of the deque
+        for parent in comit.parents.iter().skip(1) {
+            oids.push_back(parent.clone());
         }
     }
 
@@ -321,4 +335,94 @@ pub fn iter_branch_names() -> Result<Vec<String>, io::Error> {
         branches.push(relpath(&refname, "refs/heads/")?);
     }
     Ok(branches)
+}
+
+pub fn reset(oid: &str) -> Result<(), io::Error> {
+    update_ref("HEAD", &RefValue { symbolic: Some(false), value: Some(String::from(oid)) }, true)
+}
+
+
+pub fn get_working_tree() -> io::Result<HashMap<String, String>> {
+    let mut result = HashMap::new();
+
+    for entry in WalkDir::new(".") {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            let rel_path = path.strip_prefix(".").unwrap_or(path);
+            let rel_path_str = rel_path.to_string_lossy().to_string();
+
+            if is_ignored(&rel_path_str) {
+                continue;
+            }
+
+            let mut file = fs::File::open(path)?;
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)?;
+            let hash = hash_object(&contents, "blob")?;
+            result.insert(rel_path_str, hash);
+        }
+    }
+
+    Ok(result)
+}
+
+fn read_tree_merged(t_base: &str, t_head: &str, t_other: &str) -> Result<(), io::Error> { 
+
+    empty_current_directory()?;
+    for (path, blob) in diff::merge_trees(get_tree(t_base, ".")?, get_tree(t_head, ".")?, get_tree(t_other, ".")?)? {
+        let path_buf = Path::new(&path).parent().unwrap();
+        fs::create_dir_all(path_buf)?;
+        let mut file = File::create(&path)?;
+        file.write_all(&blob)?;
+
+    }
+
+    Ok(())
+}
+
+pub fn merge(other: &str) -> Result<(), io::Error> {
+    let head_ref = data::get_ref("HEAD", true)?;
+    let head = match head_ref.value{
+        Some(val) => val,
+        None => return Err(Error::new(ErrorKind::InvalidData, format!("refvalue doesn't contain valid value")))
+    };
+
+    let merge_base = get_merge_base(other, &head)?;
+    let commit_other = get_commit(other)?;
+
+    // Handle fast-forward merge
+    if merge_base == head {
+        read_tree(&commit_other.tree)?;
+        data::update_ref("HEAD", &data::RefValue { symbolic: Some(false), value: Some(String::from(other) ) }, true)?;
+        println!("Fast-forward merge, no need to commit");
+        return Ok(());
+    }
+
+    data::update_ref("MERGE_HEAD", &data::RefValue { symbolic: Some(false), value: Some(String::from(other) ) }, true)?;
+
+    let commit_base = get_commit(&merge_base)?;
+    let commit_head = get_commit(&head)?;
+
+    // Merge the trees
+    read_tree_merged(&commit_base.tree, &commit_head.tree, &commit_other.tree)?;
+    println!("Merged in working tree\nPlease commit");
+
+    Ok(())
+}
+
+pub fn get_merge_base(oid1: &str, oid2: &str) -> Result<String, io::Error> {
+    let mut que = VecDeque::new();
+    que.push_back(String::from(oid1));
+
+    let parents1: HashSet<String> = iter_commits_and_parents(que)?.into_iter().collect();
+    que = VecDeque::new();
+    que.push_back(String::from(oid2));
+    for oid in iter_commits_and_parents(que)? {
+        if parents1.contains(&oid) {
+            return Ok(oid);
+        }
+    }
+    Ok(String::new())
 }

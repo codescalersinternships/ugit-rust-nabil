@@ -1,7 +1,10 @@
-use std::{collections::{HashMap, VecDeque}, env, fs::{self}, io::{self, Error}};
+use std::{collections::{HashMap, VecDeque}, env, fs::{self}, io::{self, Error, Write}};
+
+use base::reset;
 
 mod data;
 mod base;
+mod diff;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -55,6 +58,16 @@ fn main() {
         branch(name, start_point).unwrap();
     }else if args[1] == "status" {
         status().unwrap();
+    }else if args[1] == "reset" {
+        base::reset(&args[2]).unwrap();
+    }else if args[1] == "show" {
+        show(&args[2]).unwrap();
+    }else if args[1] == "diff" {
+        _diff(&args[2]).unwrap();
+    }else if args[1] == "merge" {
+        base::merge(&args[2]).unwrap();
+    }else if args[1] == "merge-base" {
+        println!("{}", base::get_merge_base(&args[2], &args[3]).unwrap())
     }
     
 }
@@ -102,8 +115,8 @@ fn log(text: &str) -> Result<(), io::Error>{
         } else {
             String::new()
         };
-        println!("commit {}{}\n", commit.2, refs_str);
-        println!("{}",commit.2);
+        println!("commit {}{}\n", commit.msg, refs_str);
+        println!("{}",commit.msg);
         
     }
     Ok(())
@@ -130,7 +143,7 @@ fn k() -> Result<(), io::Error> {
     for oid in base::iter_commits_and_parents(oids)? {
         let commit = base::get_commit(&oid)?;
         dot += &format!("\"{}\" [shape=box style=filled label=\"{}\"]\n", oid, &oid[..10]);
-        dot += &format!("\"{}\" -> \"{}\"\n", oid, commit.1);
+        dot += &format!("\"{}\" -> \"{}\"\n", oid, commit.parents.join(","));
     }
     dot += "}\n";
 
@@ -176,3 +189,55 @@ fn status () -> Result<(), io::Error> {
     }
     Ok(())
 }
+
+
+fn _print_commit(oid: &str, commitmsg: &str, refs: Vec<String>) {
+    let refs_str = if !refs.is_empty() {
+        format!(" ({})", refs.join(", "))
+    } else {
+        String::new()
+    };
+    println!("commit {oid}{refs_str}");
+    println!("{commitmsg}");
+}
+
+fn show(oid: &str) -> Result<(), io::Error> {
+    if oid.is_empty() {
+        return Ok(());
+    }
+    let commit = base::get_commit(oid)?;
+    let parent_tree = if let Some(parent_id) = commit.parents.first() {
+        Some(base::get_commit(parent_id)?)
+    } else {
+        None
+    };
+    _print_commit (oid, &commit.msg, vec![]);
+
+    if let Some(parent_commit) = parent_tree {
+        let parent_tree_oid = parent_commit.tree;
+        let commit_tree_oid = commit.tree;
+
+        let result = diff::diff_trees(
+            base::get_tree(&parent_tree_oid,".")?,
+            base::get_tree(&commit_tree_oid, ".")?
+        )?;
+
+        io::stdout().flush()?;
+        io::stdout().write_all(&result)?;
+
+    }
+    Ok(())
+}
+
+
+fn _diff(commit_id: &str) -> Result<(), io::Error> {
+
+    let tree = base::get_commit(commit_id)?.tree;
+    let result = diff::diff_trees(base::get_tree(&tree, ".")?, base::get_working_tree()?)?;
+    
+    io::stdout().flush();
+    io::stdout().write_all(&result)?;
+    
+    Ok(())
+}
+
